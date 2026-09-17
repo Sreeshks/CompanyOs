@@ -1,0 +1,150 @@
+/* ============================================================
+   Company OS — Global Styles & CSS Variable Theme System
+   ============================================================ */
+
+@import "tailwindcss";
+
+/* ── Theme CSS Variables (Default: Metallic Dark) ──────────── */
+
+:root {
+  --background: #0F1115;
+  --foreground: #F4F5F7;
+  --surface: #171A20;
+  --surface-elevated: #1E222A;
+  --border: #343943;
+  --input: #1E222A;
+  --ring: #B8BDC7;
+  --primary: #B8BDC7;
+  --primary-foreground: #0F1115;
+  --secondary: #7F8794;
+  --secondary-foreground: #F4F5F7;
+  --muted: #1E222A;
+  --muted-foreground: #707782;
+  --accent: #1E222A;
+  --accent-foreground: #E2E5EA;
+  --card: #171A20;
+  --card-foreground: #F4F5F7;
+  --popover: #171A20;
+  --popover-foreground: #F4F5F7;
+  --success: #4CAF7D;
+  --success-foreground: #FFFFFF;
+  --warning: #D6A84F;
+  --warning-foreground: #FFFFFF;
+  --danger: #D66B6B;
+  --danger-foreground: #FFFFFF;
+  --info: #6D9ED8;
+  --info-foreground: #FFFFFF;
+  --radius: 0.5rem;
+  --sidebar-width: 260px;
+  --sidebar-collapsed-width: 68px;
+  --topbar-height: 56px;
+}
+
+/* ── Base Styles ───────────────────────────────────────────── */
+
+* {
+  border-color: var(--border);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-feature-settings: "rlig" 1, "calt" 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* ── Selection ─────────────────────────────────────────────── */
+
+::selection {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* ── Focus ring ────────────────────────────────────────────── */
+
+*:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* ── Metallic Button Gradient ──────────────────────────────── */
+
+.btn-metallic {
+  background: linear-gradient(180deg, #D7DAE0 0%, #AEB4BE 48%, #858C97 100%);
+  color: #1A1D23;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.btn-metallic:hover {
+  background: linear-gradient(180deg, #E2E5EA 0%, #BCC2CC 48%, #949BA6 100%);
+}
+
+.btn-metallic:active {
+  background: linear-gradient(180deg, #C8CCD3 0%, #A0A7B2 48%, #787F8B 100%);
+}
+
+/* ── Utility Classes ───────────────────────────────────────── */
+
+.surface {
+  background-color: var(--surface);
+}
+
+.surface-elevated {
+  background-color: var(--surface-elevated);
+}
+
+/* ── Skeleton loading animation ────────────────────────────── */
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--surface) 25%, var(--surface-elevated) 50%, var(--surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius);
+}
+
+/* ── Transitions ───────────────────────────────────────────── */
+
+.transition-theme {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+/* ── Layout helpers ────────────────────────────────────────── */
+
+.page-container {
+  padding: 1.5rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+  .page-container {
+    padding: 1rem;
+  }
+}
