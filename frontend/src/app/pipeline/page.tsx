@@ -9,7 +9,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   GitBranch, Plus, Search, Filter, MoreHorizontal,
-  Building2, ArrowRight, CheckCircle2, User, ChevronRight,
+  Building2, ArrowRight, ArrowLeft, CheckCircle2, User, ChevronRight,
   TrendingUp, Layers, RefreshCw
 } from 'lucide-react';
 import { pipelineApi } from '@/lib/api/pipeline';
@@ -149,7 +149,9 @@ export default function PipelinePage() {
           {statuses.map((status, index) => {
             const columnClients = clientsByStatus[status.id] || [];
             const isLast = index === statuses.length - 1;
+            const isFirst = index === 0;
             const nextStatus = !isLast ? statuses[index + 1] : null;
+            const prevStatus = !isFirst ? statuses[index - 1] : null;
 
             return (
               <div
@@ -236,32 +238,54 @@ export default function PipelinePage() {
                           )}
                         </div>
 
-                        {/* Card Footer with Quick Move Action */}
+                        {/* Card Footer with Quick Move Actions */}
                         <div className="pt-2 border-t flex items-center justify-between text-xs" style={{ borderColor: 'var(--border)' }}>
                           <span style={{ color: 'var(--muted-foreground)' }}>
                             {new Date(client.created_at).toLocaleDateString()}
                           </span>
 
-                          {nextStatus && (
-                            <button
-                              onClick={() =>
-                                transitionMutation.mutate({
-                                  clientId: client.id,
-                                  toStatusId: nextStatus.id,
-                                })
-                              }
-                              disabled={transitionMutation.isPending}
-                              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium border hover:bg-[var(--accent)] transition-colors"
-                              style={{
-                                borderColor: 'var(--border)',
-                                color: 'var(--primary)',
-                              }}
-                              title={`Advance to ${nextStatus.name}`}
-                            >
-                              <span>Move</span>
-                              <ArrowRight className="w-3 h-3" />
-                            </button>
-                          )}
+                          <div className="flex items-center gap-1.5">
+                            {prevStatus && (
+                              <button
+                                onClick={() =>
+                                  transitionMutation.mutate({
+                                    clientId: client.id,
+                                    toStatusId: prevStatus.id,
+                                  })
+                                }
+                                disabled={transitionMutation.isPending}
+                                className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium border hover:bg-[var(--accent)] transition-colors cursor-pointer"
+                                style={{
+                                  borderColor: 'var(--border)',
+                                  color: 'var(--warning)',
+                                }}
+                                title={`Move back to ${prevStatus.name}`}
+                              >
+                                <ArrowLeft className="w-3 h-3" />
+                                <span>Back</span>
+                              </button>
+                            )}
+                            {nextStatus && (
+                              <button
+                                onClick={() =>
+                                  transitionMutation.mutate({
+                                    clientId: client.id,
+                                    toStatusId: nextStatus.id,
+                                  })
+                                }
+                                disabled={transitionMutation.isPending}
+                                className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium border hover:bg-[var(--accent)] transition-colors cursor-pointer"
+                                style={{
+                                  borderColor: 'var(--border)',
+                                  color: 'var(--primary)',
+                                }}
+                                title={`Advance to ${nextStatus.name}`}
+                              >
+                                <span>Move</span>
+                                <ArrowRight className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     ))
