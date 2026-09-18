@@ -274,7 +274,7 @@ export default function DocumentsPage() {
                 <span>${doc.currency} ${Number(doc.subtotal || 0).toFixed(2)}</span>
               </div>
               <div class="summary-row">
-                <span>Tax / VAT (5%)</span>
+                <span>${Number(doc.tax_amount || 0) > 0 ? 'Tax / VAT (5%)' : 'Tax (No VAT)'}</span>
                 <span>${doc.currency} ${Number(doc.tax_amount || 0).toFixed(2)}</span>
               </div>
               <div class="summary-row total">
@@ -354,11 +354,13 @@ export default function DocumentsPage() {
   };
 
   // Calculations
+  const selectedBillingCompany = billingCompanies.find((bc) => bc.id === formData.billing_company_id);
+  const isVatApplicable = selectedBillingCompany?.vat_applicable ?? false;
   const calculatedSubtotal = formData.items.reduce(
     (sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.unit_price) || 0),
     0
   );
-  const calculatedTax = calculatedSubtotal * 0.05; // 5% Oman VAT
+  const calculatedTax = isVatApplicable ? calculatedSubtotal * 0.05 : 0;
   const calculatedTotal = calculatedSubtotal + calculatedTax;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -820,7 +822,9 @@ export default function DocumentsPage() {
                   style={{ backgroundColor: 'var(--accent)', borderColor: 'var(--border)' }}
                 >
                   <div className="text-[11px]" style={{ color: 'var(--muted-foreground)' }}>
-                    Automatic 5% Oman VAT included if applicable.
+                    {isVatApplicable
+                      ? 'Automatic 5% Oman VAT included.'
+                      : 'No VAT — selected billing entity is not VAT registered.'}
                   </div>
                   <div className="flex items-center gap-6 font-mono text-xs">
                     <div>
@@ -830,8 +834,8 @@ export default function DocumentsPage() {
                       </span>
                     </div>
                     <div>
-                      <span style={{ color: 'var(--muted-foreground)' }}>VAT (5%): </span>
-                      <span className="font-semibold" style={{ color: 'var(--foreground)' }}>
+                      <span style={{ color: 'var(--muted-foreground)' }}>{isVatApplicable ? 'VAT (5%): ' : 'VAT: '}</span>
+                      <span className="font-semibold" style={{ color: isVatApplicable ? 'var(--foreground)' : 'var(--muted-foreground)' }}>
                         {formData.currency} {calculatedTax.toFixed(2)}
                       </span>
                     </div>
@@ -986,7 +990,7 @@ export default function DocumentsPage() {
                   <span>{viewingDoc.currency} {Number(viewingDoc.subtotal || 0).toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between" style={{ color: 'var(--muted-foreground)' }}>
-                  <span>Tax / VAT (5%):</span>
+                  <span>{Number(viewingDoc.tax_amount || 0) > 0 ? 'Tax / VAT (5%):' : 'Tax (No VAT):'}</span>
                   <span>{viewingDoc.currency} {Number(viewingDoc.tax_amount || 0).toFixed(2)}</span>
                 </div>
                 <div className="border-t pt-1.5 flex justify-between font-bold text-sm" style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}>
