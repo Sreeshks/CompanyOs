@@ -9,7 +9,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FileText, Plus, Search, Filter, Download, ExternalLink,
   DollarSign, CheckCircle2, Clock, AlertTriangle, Eye, X,
-  Trash2, Building2, Calendar, ShieldCheck, Sparkles, Send, Check
+  Trash2, Building2, Calendar, ShieldCheck, Sparkles, Send, Check,
+  Printer, FileDown
 } from 'lucide-react';
 import { documentsApi } from '@/lib/api/documents';
 import { clientsApi } from '@/lib/api/clients';
@@ -29,6 +30,7 @@ export default function DocumentsPage() {
   // Modal states
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [viewingDoc, setViewingDoc] = useState<Document | null>(null);
+  const [pdfPreviewHtml, setPdfPreviewHtml] = useState<string | null>(null);
 
   // Form State
   const [formData, setFormData] = useState<{
@@ -159,6 +161,156 @@ export default function DocumentsPage() {
       file_reference: '',
       items: [{ description: '', quantity: 1, unit_price: 0 }],
     });
+  };
+
+  // ── PDF generation helpers ─────────────────────────────────
+
+  const generatePdfHtml = (doc: Document): string => {
+    const itemsRows = (doc.items || []).map((item, idx) => `
+      <tr>
+        <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#ccc;font-size:13px;">${idx + 1}</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#e0e0e0;font-weight:500;font-size:13px;">${item.description}</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#ccc;text-align:center;font-family:monospace;font-size:13px;">${Number(item.quantity).toFixed(2)}</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#ccc;text-align:right;font-family:monospace;font-size:13px;">${Number(item.unit_price).toFixed(2)}</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #2a2a2a;color:#f0f0f0;text-align:right;font-weight:600;font-family:monospace;font-size:13px;">${Number(item.total_price).toFixed(2)}</td>
+      </tr>
+    `).join('');
+
+    const docTypeName = doc.document_type_name || 'Document';
+    const issueDate = doc.issue_date ? new Date(doc.issue_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+    const dueDate = doc.due_date ? new Date(doc.due_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${doc.document_number} — ${docTypeName}</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { font-family: 'Inter', sans-serif; background: #0d0d0d; color: #e0e0e0; padding: 40px; }
+          .page { max-width: 800px; margin: 0 auto; background: #141414; border: 1px solid #2a2a2a; border-radius: 12px; padding: 48px; }
+          .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; padding-bottom: 24px; border-bottom: 1px solid #2a2a2a; }
+          .company-name { font-size: 22px; font-weight: 700; color: #c8a96e; letter-spacing: 0.5px; }
+          .doc-label { font-size: 28px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 2px; text-align: right; }
+          .doc-number { font-size: 14px; color: #c8a96e; font-family: monospace; margin-top: 6px; text-align: right; }
+          .status-badge { display: inline-block; padding: 3px 12px; border-radius: 20px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-top: 8px; }
+          .status-draft { background: #2a2a1e; color: #c8a96e; border: 1px solid #c8a96e40; }
+          .status-sent { background: #1e2a2a; color: #6ec8c8; border: 1px solid #6ec8c840; }
+          .status-paid { background: #1e2a1e; color: #6ec86e; border: 1px solid #6ec86e40; }
+          .status-cancelled { background: #2a1e1e; color: #c86e6e; border: 1px solid #c86e6e40; }
+          .meta-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; margin-bottom: 36px; }
+          .meta-card { background: #0d0d0d; border: 1px solid #2a2a2a; border-radius: 8px; padding: 14px 16px; }
+          .meta-label { font-size: 9px; text-transform: uppercase; letter-spacing: 1.5px; color: #666; margin-bottom: 6px; }
+          .meta-value { font-size: 13px; font-weight: 600; color: #e0e0e0; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 32px; }
+          thead th { padding: 12px 14px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #888; border-bottom: 2px solid #2a2a2a; text-align: left; }
+          thead th:nth-child(3) { text-align: center; }
+          thead th:nth-child(4), thead th:nth-child(5) { text-align: right; }
+          .summary { display: flex; justify-content: flex-end; margin-bottom: 32px; }
+          .summary-table { width: 280px; }
+          .summary-row { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; color: #999; }
+          .summary-row.total { border-top: 2px solid #c8a96e40; padding-top: 12px; margin-top: 4px; font-size: 18px; font-weight: 700; color: #c8a96e; }
+          .footer { text-align: center; padding-top: 32px; border-top: 1px solid #2a2a2a; font-size: 11px; color: #555; }
+          @media print {
+            body { background: #0d0d0d; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .page { border: none; box-shadow: none; padding: 24px; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="page">
+          <div class="header">
+            <div>
+              <div class="company-name">${doc.billing_company_name || 'Company'}</div>
+              <div style="font-size:12px;color:#666;margin-top:4px;">Tax Invoice / ${docTypeName}</div>
+            </div>
+            <div>
+              <div class="doc-label">${docTypeName}</div>
+              <div class="doc-number">${doc.document_number}</div>
+              <div style="text-align:right;"><span class="status-badge status-${doc.status}">${doc.status}</span></div>
+            </div>
+          </div>
+
+          <div class="meta-grid">
+            <div class="meta-card">
+              <div class="meta-label">Client</div>
+              <div class="meta-value">${doc.client_name || '—'}</div>
+            </div>
+            <div class="meta-card">
+              <div class="meta-label">Billing Entity</div>
+              <div class="meta-value">${doc.billing_company_name || '—'}</div>
+            </div>
+            <div class="meta-card">
+              <div class="meta-label">Issue Date</div>
+              <div class="meta-value">${issueDate}</div>
+            </div>
+            <div class="meta-card">
+              <div class="meta-label">Due Date</div>
+              <div class="meta-value">${dueDate}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width:40px;">#</th>
+                <th>Description</th>
+                <th style="width:80px;">Qty</th>
+                <th style="width:100px;">Unit Price</th>
+                <th style="width:110px;">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsRows || '<tr><td colspan="5" style="padding:20px;text-align:center;color:#555;">No line items</td></tr>'}
+            </tbody>
+          </table>
+
+          <div class="summary">
+            <div class="summary-table">
+              <div class="summary-row">
+                <span>Subtotal</span>
+                <span>${doc.currency} ${Number(doc.subtotal || 0).toFixed(2)}</span>
+              </div>
+              <div class="summary-row">
+                <span>Tax / VAT (5%)</span>
+                <span>${doc.currency} ${Number(doc.tax_amount || 0).toFixed(2)}</span>
+              </div>
+              <div class="summary-row total">
+                <span>Total</span>
+                <span>${doc.currency} ${Number(doc.total_amount || 0).toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="footer">
+            <p>Generated by Company OS &bull; ${doc.document_number}</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+  };
+
+  const handleDownloadPdf = (doc: Document) => {
+    const html = generatePdfHtml(doc);
+    const printWindow = window.open('', '_blank', 'width=900,height=700');
+    if (!printWindow) {
+      toast.error('Popup blocked. Please allow popups for this site.');
+      return;
+    }
+    printWindow.document.write(html);
+    printWindow.document.close();
+    // Wait for fonts/styles to load before triggering print
+    setTimeout(() => {
+      printWindow.print();
+    }, 600);
+  };
+
+  const handleViewPdf = (doc: Document) => {
+    const html = generatePdfHtml(doc);
+    setPdfPreviewHtml(html);
   };
 
   const handleOpenCreate = () => {
@@ -844,9 +996,29 @@ export default function DocumentsPage() {
               </div>
             </div>
 
+            {/* PDF Actions */}
+            <div className="flex items-center gap-2 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
+              <button
+                type="button"
+                onClick={() => handleViewPdf(viewingDoc)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all hover:scale-[1.02] cursor-pointer"
+                style={{ borderColor: 'var(--primary)', color: 'var(--primary)', background: 'var(--primary)10' }}
+              >
+                <Eye className="w-3.5 h-3.5" /> View PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDownloadPdf(viewingDoc)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all hover:scale-[1.02] cursor-pointer"
+                style={{ borderColor: '#6ec86e', color: '#6ec86e', background: '#6ec86e10' }}
+              >
+                <FileDown className="w-3.5 h-3.5" /> Download PDF
+              </button>
+            </div>
+
             {/* Status Change & Footer Actions */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Status:</span>
                 {viewingDoc.status !== 'sent' && (
                   <button
@@ -892,6 +1064,52 @@ export default function DocumentsPage() {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* PDF Preview Modal */}
+      {/* ============================================================ */}
+      {pdfPreviewHtml && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div
+            className="w-full max-w-4xl h-[85vh] rounded-xl border shadow-2xl flex flex-col overflow-hidden"
+            style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+          >
+            {/* Preview Header */}
+            <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4" style={{ color: 'var(--primary)' }} />
+                <span className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>PDF Preview</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {viewingDoc && (
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadPdf(viewingDoc)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-[1.02] cursor-pointer"
+                    style={{ background: '#6ec86e20', color: '#6ec86e' }}
+                  >
+                    <Printer className="w-3.5 h-3.5" /> Print / Save PDF
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPdfPreviewHtml(null)}
+                  className="p-1.5 rounded-lg hover:bg-[var(--accent)] text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            {/* Preview iframe */}
+            <iframe
+              srcDoc={pdfPreviewHtml}
+              className="flex-1 w-full border-0"
+              title="Document PDF Preview"
+              sandbox="allow-same-origin"
+            />
           </div>
         </div>
       )}

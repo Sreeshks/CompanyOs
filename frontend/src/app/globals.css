@@ -4,35 +4,35 @@
 
 @import "tailwindcss";
 
-/* ── Theme CSS Variables (Default: Metallic Dark) ──────────── */
+/* ── Theme CSS Variables (Default: Luxury Gold & Black) ──── */
 
 :root {
-  --background: #0F1115;
-  --foreground: #F4F5F7;
-  --surface: #171A20;
-  --surface-elevated: #1E222A;
-  --border: #343943;
-  --input: #1E222A;
-  --ring: #B8BDC7;
-  --primary: #B8BDC7;
-  --primary-foreground: #0F1115;
-  --secondary: #7F8794;
-  --secondary-foreground: #F4F5F7;
-  --muted: #1E222A;
-  --muted-foreground: #707782;
-  --accent: #1E222A;
-  --accent-foreground: #E2E5EA;
-  --card: #171A20;
-  --card-foreground: #F4F5F7;
-  --popover: #171A20;
-  --popover-foreground: #F4F5F7;
-  --success: #4CAF7D;
-  --success-foreground: #FFFFFF;
-  --warning: #D6A84F;
-  --warning-foreground: #FFFFFF;
-  --danger: #D66B6B;
+  --background: #050505;
+  --foreground: #F5F1E8;
+  --surface: #0A0A0A;
+  --surface-elevated: #11100D;
+  --border: #3A3020;
+  --input: #14120E;
+  --ring: #D4AF37;
+  --primary: #D4AF37;
+  --primary-foreground: #080705;
+  --secondary: #B8902E;
+  --secondary-foreground: #FFF8E7;
+  --muted: #191711;
+  --muted-foreground: #B8B1A3;
+  --accent: #2A2112;
+  --accent-foreground: #F0D98A;
+  --card: #0E0D0A;
+  --card-foreground: #F5F1E8;
+  --popover: #12100C;
+  --popover-foreground: #F5F1E8;
+  --success: #4CAF7A;
+  --success-foreground: #07100B;
+  --warning: #E6A93A;
+  --warning-foreground: #120C03;
+  --danger: #D9534F;
   --danger-foreground: #FFFFFF;
-  --info: #6D9ED8;
+  --info: #5B8FA8;
   --info-foreground: #FFFFFF;
   --radius: 0.5rem;
   --sidebar-width: 260px;
@@ -91,18 +91,18 @@ body {
 /* ── Metallic Button Gradient ──────────────────────────────── */
 
 .btn-metallic {
-  background: linear-gradient(180deg, #D7DAE0 0%, #AEB4BE 48%, #858C97 100%);
-  color: #1A1D23;
+  background: linear-gradient(180deg, #E8D48B 0%, #D4AF37 48%, #B8902E 100%);
+  color: #080705;
   font-weight: 500;
   transition: all 0.15s ease;
 }
 
 .btn-metallic:hover {
-  background: linear-gradient(180deg, #E2E5EA 0%, #BCC2CC 48%, #949BA6 100%);
+  background: linear-gradient(180deg, #F0DFA0 0%, #DFC04D 48%, #C49E38 100%);
 }
 
 .btn-metallic:active {
-  background: linear-gradient(180deg, #C8CCD3 0%, #A0A7B2 48%, #787F8B 100%);
+  background: linear-gradient(180deg, #D4AF37 0%, #B8902E 48%, #9A7825 100%);
 }
 
 /* ── Utility Classes ───────────────────────────────────────── */

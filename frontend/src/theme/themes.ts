@@ -5,39 +5,39 @@
 import { ThemeConfig } from '@/types/theme';
 
 export const themes: ThemeConfig[] = [
-  // ── 1. Metallic Dark (DEFAULT) ────────────────────────────
+  // ── 1. Luxury Gold & Black (DEFAULT) ───────────────────────
   {
-    id: 'metallic-dark',
-    name: 'Metallic Dark',
-    description: 'Premium graphite + silver',
+    id: 'luxury-gold-black',
+    name: 'Luxury Gold & Black',
+    description: 'Premium gold + deep black',
     mode: 'dark',
     colors: {
-      background: '#0F1115',
-      foreground: '#F4F5F7',
-      surface: '#171A20',
-      surfaceElevated: '#1E222A',
-      border: '#343943',
-      input: '#1E222A',
-      ring: '#B8BDC7',
-      primary: '#B8BDC7',
-      primaryForeground: '#0F1115',
-      secondary: '#7F8794',
-      secondaryForeground: '#F4F5F7',
-      muted: '#1E222A',
-      mutedForeground: '#707782',
-      accent: '#1E222A',
-      accentForeground: '#E2E5EA',
-      card: '#171A20',
-      cardForeground: '#F4F5F7',
-      popover: '#171A20',
-      popoverForeground: '#F4F5F7',
-      success: '#4CAF7D',
-      successForeground: '#FFFFFF',
-      warning: '#D6A84F',
-      warningForeground: '#FFFFFF',
-      danger: '#D66B6B',
+      background: '#050505',
+      foreground: '#F5F1E8',
+      surface: '#0A0A0A',
+      surfaceElevated: '#11100D',
+      border: '#3A3020',
+      input: '#14120E',
+      ring: '#D4AF37',
+      primary: '#D4AF37',
+      primaryForeground: '#080705',
+      secondary: '#B8902E',
+      secondaryForeground: '#FFF8E7',
+      muted: '#191711',
+      mutedForeground: '#B8B1A3',
+      accent: '#2A2112',
+      accentForeground: '#F0D98A',
+      card: '#0E0D0A',
+      cardForeground: '#F5F1E8',
+      popover: '#12100C',
+      popoverForeground: '#F5F1E8',
+      success: '#4CAF7A',
+      successForeground: '#07100B',
+      warning: '#E6A93A',
+      warningForeground: '#120C03',
+      danger: '#D9534F',
       dangerForeground: '#FFFFFF',
-      info: '#6D9ED8',
+      info: '#5B8FA8',
       infoForeground: '#FFFFFF',
     },
   },
@@ -450,7 +450,7 @@ export const themes: ThemeConfig[] = [
   },
 ];
 
-export const DEFAULT_THEME_ID = 'metallic-dark';
+export const DEFAULT_THEME_ID = 'luxury-gold-black';
 
 export function getThemeById(id: string): ThemeConfig | undefined {
   return themes.find((t) => t.id === id);
