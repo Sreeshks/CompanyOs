@@ -174,32 +174,7 @@ export default function MyWorkPage() {
       setSelectedTask(null);
     },
     onError: (err: any) => {
-      toast.error(err?.response?.data?.detail || 'Failed to complete task');
-    },
-  });
-
-  const submitForApprovalMutation = useMutation({
-    mutationFn: async ({ taskId, contentItemId }: { taskId: string; contentItemId: string }) => {
-      // 1. Advance content deliverable to "Pending Client Approval"
-      await contentApi.transition(contentItemId, {
-        action: 'Submit for Approval',
-        notes: 'Completed editing, submitted for client approval',
-      });
-      // 2. Mark the editing task as completed
-      await tasksApi.complete(taskId, {
-        notes: 'Completed editing & submitted for client approval',
-      });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['my-work'] });
-      queryClient.invalidateQueries({ queryKey: ['content-items'] });
-      queryClient.invalidateQueries({ queryKey: ['client-workspace-folders'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      toast.success('Deliverable moved to Pending Client Approval & editing task completed!');
-      setSelectedTask(null);
-    },
-    onError: (err: any) => {
-      const msg = err?.response?.data?.detail || err?.response?.data?.error?.message || 'Failed to submit for client approval';
+      const msg = err?.response?.data?.detail || err?.response?.data?.error?.message || 'Failed to complete task';
       toast.error(typeof msg === 'string' ? msg : JSON.stringify(msg));
     },
   });
@@ -449,41 +424,11 @@ export default function MyWorkPage() {
             {/* Actions */}
             <div className="flex items-center justify-between pt-4 border-t gap-2 flex-wrap" style={{ borderColor: 'var(--border)' }}>
               <div className="flex items-center gap-2">
-                {selectedTask.status !== 'completed' && selectedTask.content_item_id && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      submitForApprovalMutation.mutate({
-                        taskId: selectedTask.id,
-                        contentItemId: selectedTask.content_item_id!,
-                      })
-                    }
-                    disabled={submitForApprovalMutation.isPending || completeMutation.isPending}
-                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold disabled:opacity-50 cursor-pointer shadow-md hover:scale-[1.01] transition-transform"
-                    style={{
-                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                      color: '#ffffff',
-                    }}
-                  >
-                    {submitForApprovalMutation.isPending ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Submitting to Approval...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Send className="w-3.5 h-3.5" />
-                        <span>Submit for Client Approval ➔</span>
-                      </>
-                    )}
-                  </button>
-                )}
-
                 {selectedTask.status !== 'completed' && (
                   <button
                     type="button"
                     onClick={() => completeMutation.mutate(selectedTask.id)}
-                    disabled={completeMutation.isPending || submitForApprovalMutation.isPending}
+                    disabled={completeMutation.isPending}
                     className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium border transition-colors disabled:opacity-50 cursor-pointer hover:bg-[var(--accent)]"
                     style={{ borderColor: 'var(--border)', color: 'var(--foreground)' }}
                   >

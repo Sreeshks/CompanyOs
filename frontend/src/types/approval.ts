@@ -19,6 +19,20 @@ export interface ApprovalDecisionRequest {
   decision: string;
   rejection_reason?: string;
   approved_by_name?: string;
+  content_id?: string;
+}
+
+export interface PublicReviewDeliverable {
+  id: string;
+  file_name: string;
+  display_name: string;
+  target_month?: string;
+  approval_status: string;
+  rejection_reason?: string;
+  preview_url?: string;
+  thumbnail_url?: string;
+  image_url?: string;
+  stage_name?: string;
 }
 
 export interface PublicContentReview {
@@ -31,9 +45,12 @@ export interface PublicContentReview {
   rejection_reason?: string;
   preview_url?: string;
   token_valid: boolean;
+  client_id?: string;
+  deliverables?: PublicReviewDeliverable[];
 }
 
 export interface GenerateApprovalLinkRequest {
-  content_id: string;
+  content_id?: string;
+  client_id?: string;
   expires_days?: number;
 }

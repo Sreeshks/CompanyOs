@@ -1,4 +1,5 @@
 import uuid
+from typing import Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
@@ -13,7 +14,8 @@ router = APIRouter(prefix="/approvals", tags=["Client Approvals"])
 
 
 class GenerateLinkRequest(BaseModel):
-    content_id: uuid.UUID
+    content_id: Optional[uuid.UUID] = None
+    client_id: Optional[uuid.UUID] = None
     expires_days: int = 14
 
 
@@ -26,6 +28,7 @@ def generate_approval_link(
     approval = ApprovalService.generate_approval_link(
         db=db,
         content_id=req.content_id,
+        client_id=req.client_id,
         expires_days=req.expires_days,
         created_by_id=current_user.id
     )

@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, model_validator
 
@@ -23,12 +23,26 @@ class ApprovalDecisionRequest(BaseModel):
     decision: str  # 'approved' or 'rejected'
     rejection_reason: Optional[str] = None
     approved_by_name: Optional[str] = "Client Reviewer"
+    content_id: Optional[uuid.UUID] = None
 
     @model_validator(mode="after")
     def validate_rejection_reason(self):
         if self.decision.lower() == "rejected" and (not self.rejection_reason or not self.rejection_reason.strip()):
             raise ValueError("rejection_reason is mandatory when rejecting content")
         return self
+
+
+class PublicReviewDeliverable(BaseModel):
+    id: uuid.UUID
+    file_name: str
+    display_name: str
+    target_month: Optional[str] = None
+    approval_status: str = "pending"
+    rejection_reason: Optional[str] = None
+    preview_url: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+    image_url: Optional[str] = None
+    stage_name: Optional[str] = None
 
 
 class PublicContentReviewOut(BaseModel):
@@ -41,3 +55,5 @@ class PublicContentReviewOut(BaseModel):
     rejection_reason: Optional[str] = None
     preview_url: Optional[str] = None
     token_valid: bool = True
+    client_id: Optional[uuid.UUID] = None
+    deliverables: Optional[List[PublicReviewDeliverable]] = None

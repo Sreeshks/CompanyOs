@@ -14,12 +14,12 @@ import {
   Sparkles, ExternalLink, X, ArrowLeft, ChevronRight,
   FolderTree, CheckSquare, Square, Scissors, ShieldCheck,
   Upload, UploadCloud, Loader2, Trash2, Edit3, Eye, ZoomIn,
-  Clock, Send, AlertCircle
+  Clock, Send, AlertCircle, MessageSquare
 } from 'lucide-react';
 import { contentApi } from '@/lib/api/content';
 import { clientsApi } from '@/lib/api/clients';
 import { workspacesApi } from '@/lib/api/workspaces';
-import { masterDataApi } from '@/lib/api/index';
+import { masterDataApi, approvalsApi } from '@/lib/api/index';
 import { usersApi } from '@/lib/api/users';
 import { uploadApi } from '@/lib/api/upload';
 import type { ImgBBUploadResult } from '@/lib/api/upload';
@@ -81,6 +81,13 @@ export default function ContentPage() {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Editing Sub-tabs state: 'all' | 'to_edit' | 'edited' | 'revisions'
+  const [editingSubTab, setEditingSubTab] = useState<'all' | 'to_edit' | 'edited' | 'revisions'>('all');
+
+  // Client Review Share Link state
+  const [isGeneratingLink, setIsGeneratingLink] = useState(false);
+  const [lastReviewUrl, setLastReviewUrl] = useState<string | null>(null);
+
   // URL query params sync on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -100,6 +107,7 @@ export default function ContentPage() {
   // Clear selections when switching folder or client
   useEffect(() => {
     setSelectedItemIds(new Set());
+    setEditingSubTab('all');
   }, [selectedClientId, selectedFolderId]);
 
   // Queries
@@ -221,7 +229,9 @@ export default function ContentPage() {
   // Deliverables strictly for the currently opened folder
   const currentFolderItems = useMemo(() => {
     if (!activeFolder) return [];
-    return (Array.isArray(contentItems) ? contentItems : []).filter((item) => {
+    const isEditStage = (activeFolder.name || '').toLowerCase().includes('edit') || (activeFolder.stage_name || '').toLowerCase().includes('edit');
+
+    let items = (Array.isArray(contentItems) ? contentItems : []).filter((item) => {
       if (item.folder_id === activeFolder.id) return true;
       if (
         activeFolder.stage_name &&
@@ -236,8 +246,70 @@ export default function ContentPage() {
       ) {
         return true;
       }
+      // If in Editing folder, also include items rejected for needs edit
+      if (isEditStage && (item.stage_code === 'REJECTED_NEEDS_EDIT' || (item.stage_name || '').toLowerCase().includes('needs edit'))) {
+        return true;
+      }
       return false;
     });
+
+    if (isEditStage && editingSubTab !== 'all') {
+      if (editingSubTab === 'revisions') {
+        items = items.filter(
+          (i) =>
+            i.stage_code === 'REJECTED_NEEDS_EDIT' ||
+            (i.stage_name || '').toLowerCase().includes('needs edit') ||
+            (i.stage_name || '').toLowerCase().includes('reject') ||
+            !!i.latest_rejection_reason
+        );
+      } else if (editingSubTab === 'edited') {
+        items = items.filter((i) => {
+          const isRev = i.stage_code === 'REJECTED_NEEDS_EDIT' || (i.stage_name || '').toLowerCase().includes('needs edit') || !!i.latest_rejection_reason;
+          return !isRev && (!!i.thumbnail_url || !!i.image_url || (i.file_name || '').toLowerCase().includes('edit'));
+        });
+      } else if (editingSubTab === 'to_edit') {
+        items = items.filter((i) => {
+          const isRev = i.stage_code === 'REJECTED_NEEDS_EDIT' || (i.stage_name || '').toLowerCase().includes('needs edit') || !!i.latest_rejection_reason;
+          return !isRev && !i.thumbnail_url && !i.image_url;
+        });
+      }
+    }
+
+    return items;
+  }, [contentItems, activeFolder, editingSubTab]);
+
+  // Sub-category counts when in Editing stage
+  const editingCategoryCounts = useMemo(() => {
+    if (!activeFolder) return { all: 0, to_edit: 0, edited: 0, revisions: 0 };
+    const isEditStage = (activeFolder.name || '').toLowerCase().includes('edit') || (activeFolder.stage_name || '').toLowerCase().includes('edit');
+    if (!isEditStage) return { all: 0, to_edit: 0, edited: 0, revisions: 0 };
+
+    const allInEdit = (Array.isArray(contentItems) ? contentItems : []).filter((item) => {
+      const isMatch =
+        item.folder_id === activeFolder.id ||
+        (activeFolder.stage_name && item.stage_name && item.stage_name.toLowerCase() === activeFolder.stage_name.toLowerCase()) ||
+        (activeFolder.workflow_stage_id && item.current_stage_id === activeFolder.workflow_stage_id) ||
+        item.stage_code === 'REJECTED_NEEDS_EDIT' ||
+        (item.stage_name || '').toLowerCase().includes('needs edit');
+      return isMatch;
+    });
+
+    let toEdit = 0;
+    let edited = 0;
+    let revisions = 0;
+
+    for (const i of allInEdit) {
+      const isRev = i.stage_code === 'REJECTED_NEEDS_EDIT' || (i.stage_name || '').toLowerCase().includes('needs edit') || !!i.latest_rejection_reason;
+      if (isRev) {
+        revisions++;
+      } else if (i.thumbnail_url || i.image_url || (i.file_name || '').toLowerCase().includes('edit')) {
+        edited++;
+      } else {
+        toEdit++;
+      }
+    }
+
+    return { all: allInEdit.length, to_edit: toEdit, edited, revisions };
   }, [contentItems, activeFolder]);
 
   // Global search filtered items (for grid/table view or client search)
@@ -427,6 +499,39 @@ export default function ContentPage() {
       setSelectedItemIds(new Set());
     } else {
       setSelectedItemIds(new Set(currentFolderItems.map((item) => item.id)));
+    }
+  };
+
+  // Handler to generate and copy shareable client approval link
+  const handleShareClientReviewLink = async () => {
+    if (!selectedClientId) {
+      toast.error('Please select a client');
+      return;
+    }
+    setIsGeneratingLink(true);
+    try {
+      const res = await approvalsApi.generateLink({
+        client_id: selectedClientId,
+      });
+      const token = res.data?.access_token;
+      if (!token) {
+        toast.error('Failed to generate review token');
+        return;
+      }
+      const reviewUrl = `${window.location.origin}/review/${token}`;
+      setLastReviewUrl(reviewUrl);
+      await navigator.clipboard.writeText(reviewUrl);
+      toast.success('Client review link copied to clipboard! Share it with the client.', {
+        action: {
+          label: 'Open Portal',
+          onClick: () => window.open(reviewUrl, '_blank'),
+        },
+      });
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || err?.response?.data?.error?.message || 'Failed to generate review link';
+      toast.error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setIsGeneratingLink(false);
     }
   };
 
@@ -1167,6 +1272,8 @@ export default function ContentPage() {
                 const theme = getFolderTheme(activeFolder.name, activeFolder.stage_code);
                 const nextAction = getStageAction(activeFolder.stage_name || activeFolder.name);
                 const returnAction = getReturnStageAction(activeFolder.stage_name || activeFolder.name);
+                const isPendingApprovalFolder = (activeFolder.name || '').toLowerCase().includes('approval') || (activeFolder.stage_name || '').toLowerCase().includes('approval');
+                const isEditingFolder = (activeFolder.name || '').toLowerCase().includes('edit') || (activeFolder.stage_name || '').toLowerCase().includes('edit');
                 const IconComp = theme.icon;
 
                 return (
@@ -1238,6 +1345,27 @@ export default function ContentPage() {
                         <span>Add File to {activeFolder.name}</span>
                       </button>
 
+                      {/* Shareable Client Review Link Button (in Pending Client Approval) */}
+                      {isPendingApprovalFolder && (
+                        <button
+                          onClick={handleShareClientReviewLink}
+                          disabled={isGeneratingLink}
+                          className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all cursor-pointer shadow-sm hover:scale-[1.01]"
+                          style={{
+                            backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                            borderColor: 'rgba(16, 185, 129, 0.5)',
+                            color: '#10b981',
+                          }}
+                        >
+                          {isGeneratingLink ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          )}
+                          <span>{lastReviewUrl ? 'Copy Client Review Link' : '🔗 Share Client Review Link'}</span>
+                        </button>
+                      )}
+
                       {/* "Return to Previous Step" batch return button */}
                       {returnAction && selectedItemIds.size > 0 && (
                         <button
@@ -1275,6 +1403,124 @@ export default function ContentPage() {
                   </div>
                 );
               })()}
+
+              {/* Client Review Link Share Banner (in Pending Client Approval) */}
+              {((activeFolder.name || '').toLowerCase().includes('approval') || (activeFolder.stage_name || '').toLowerCase().includes('approval')) && (
+                <div
+                  className="rounded-xl border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm"
+                  style={{
+                    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                    borderColor: 'rgba(16, 185, 129, 0.3)',
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: 'rgba(16, 185, 129, 0.2)', color: '#10b981' }}
+                    >
+                      <ShieldCheck className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-sm flex items-center gap-2" style={{ color: 'var(--foreground)' }}>
+                        <span>Client Review Portal</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold uppercase">
+                          Shareable URL
+                        </span>
+                      </h4>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--muted-foreground)' }}>
+                        Share this link with {activeClient?.business_name}. The client can open the link directly on mobile/desktop to approve photos or request revisions.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={handleShareClientReviewLink}
+                      disabled={isGeneratingLink}
+                      className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white shadow-md transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      {isGeneratingLink ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      )}
+                      <span>{lastReviewUrl ? 'Copy Link to Clipboard' : 'Generate & Copy Review Link'}</span>
+                    </button>
+
+                    {lastReviewUrl && (
+                      <a
+                        href={lastReviewUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-medium border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                      >
+                        <span>Open Portal</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Editing Sub-Category Tabs (in Editing Step) */}
+              {((activeFolder.name || '').toLowerCase().includes('edit') || (activeFolder.stage_name || '').toLowerCase().includes('edit')) && (
+                <div
+                  className="rounded-xl border p-2 flex items-center gap-2 flex-wrap text-xs"
+                  style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+                >
+                  <span className="text-[11px] font-semibold px-2" style={{ color: 'var(--muted-foreground)' }}>
+                    Folder Sections:
+                  </span>
+
+                  <button
+                    onClick={() => setEditingSubTab('all')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
+                      editingSubTab === 'all'
+                        ? 'bg-[var(--accent)] text-[var(--primary)] font-semibold shadow-sm'
+                        : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>All Items ({editingCategoryCounts.all})</span>
+                  </button>
+
+                  <button
+                    onClick={() => setEditingSubTab('to_edit')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
+                      editingSubTab === 'to_edit'
+                        ? 'bg-[var(--accent)] text-[var(--primary)] font-semibold shadow-sm'
+                        : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]'
+                    }`}
+                  >
+                    <Scissors className="w-3.5 h-3.5" />
+                    <span>To Edit / Selected ({editingCategoryCounts.to_edit})</span>
+                  </button>
+
+                  <button
+                    onClick={() => setEditingSubTab('edited')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
+                      editingSubTab === 'edited'
+                        ? 'bg-emerald-500/15 text-emerald-400 font-semibold border border-emerald-500/30'
+                        : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Edited Photos ({editingCategoryCounts.edited})</span>
+                  </button>
+
+                  <button
+                    onClick={() => setEditingSubTab('revisions')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-colors cursor-pointer ${
+                      editingSubTab === 'revisions'
+                        ? 'bg-amber-500/15 text-amber-400 font-semibold border border-amber-500/30'
+                        : 'text-[var(--muted-foreground)] hover:text-[var(--foreground)]'
+                    }`}
+                  >
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Needs Revision / Rejected ({editingCategoryCounts.revisions})</span>
+                  </button>
+                </div>
+              )}
 
               {/* Selection Bar & Stats */}
               <div
@@ -1721,6 +1967,17 @@ export default function ContentPage() {
                                 </div>
                               )}
                             </div>
+
+                            {/* Client Feedback Rejection Note */}
+                            {item.latest_rejection_reason && (
+                              <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-start gap-1.5 mt-1">
+                                <MessageSquare className="w-3.5 h-3.5 flex-shrink-0 text-amber-400 mt-0.5" />
+                                <div className="min-w-0">
+                                  <strong className="text-[10px] uppercase block tracking-wider text-amber-400">Client Feedback:</strong>
+                                  <p className="line-clamp-2 text-[11px] leading-snug">{item.latest_rejection_reason}</p>
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           {/* Card Bottom: Return / Move to Next Step Buttons */}

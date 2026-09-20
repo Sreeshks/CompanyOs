@@ -24,6 +24,7 @@ export interface ContentItem {
   file_size_bytes?: number;
   thumbnail_url?: string;
   image_url?: string;
+  latest_rejection_reason?: string;
   created_by?: string;
   created_at: string;
   updated_at: string;

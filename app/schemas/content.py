@@ -74,6 +74,7 @@ class ContentItemOut(ContentItemBase):
     file_size_bytes: Optional[int] = None
     thumbnail_url: Optional[str] = None
     image_url: Optional[str] = None
+    latest_rejection_reason: Optional[str] = None
     created_by: Optional[uuid.UUID] = None
     created_at: datetime
     updated_at: datetime
