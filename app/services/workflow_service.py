@@ -150,6 +150,48 @@ class WorkflowService:
             if not transition and candidates:
                 transition = candidates[0]
 
+        # Support reverse / return / move back progression
+        if not transition and any(k in action_clean.lower() for k in ["return", "revert", "back", "previous", "undo"]):
+            cand_stage = None
+            if "selected" in action_clean.lower():
+                cand_stage = db.query(WorkflowStage).filter(
+                    WorkflowStage.workflow_id == current_stage.workflow_id,
+                    or_(WorkflowStage.code == "SELECTED", func.lower(WorkflowStage.name) == "selected")
+                ).first()
+            elif "raw" in action_clean.lower():
+                cand_stage = db.query(WorkflowStage).filter(
+                    WorkflowStage.workflow_id == current_stage.workflow_id,
+                    or_(WorkflowStage.code == "RAW", func.lower(WorkflowStage.name) == "raw")
+                ).first()
+            elif "editing" in action_clean.lower():
+                cand_stage = db.query(WorkflowStage).filter(
+                    WorkflowStage.workflow_id == current_stage.workflow_id,
+                    or_(WorkflowStage.code == "EDITING", func.lower(WorkflowStage.name) == "editing")
+                ).first()
+            else:
+                cand_stage = db.query(WorkflowStage).filter(
+                    WorkflowStage.workflow_id == current_stage.workflow_id,
+                    WorkflowStage.order_index < current_stage.order_index
+                ).order_by(WorkflowStage.order_index.desc()).first()
+
+            if cand_stage:
+                transition = db.query(WorkflowTransition).filter(
+                    WorkflowTransition.from_stage_id == current_stage.id,
+                    WorkflowTransition.to_stage_id == cand_stage.id,
+                    WorkflowTransition.active == True
+                ).first()
+                if not transition:
+                    transition = WorkflowTransition(
+                        workflow_id=current_stage.workflow_id,
+                        from_stage_id=current_stage.id,
+                        to_stage_id=cand_stage.id,
+                        action=action_clean,
+                        assignment_mode="none",
+                        active=True
+                    )
+                    db.add(transition)
+                    db.flush()
+
         if not transition:
             raise InvalidWorkflowTransitionException(
                 f"Action '{action_clean}' is not a valid transition from stage '{current_stage.name}'."
@@ -164,6 +206,21 @@ class WorkflowService:
 
         target_stage = db.query(WorkflowStage).filter(WorkflowStage.id == transition.to_stage_id).first()
         old_stage_name = current_stage.name
+        is_reverse_move = target_stage.order_index < current_stage.order_index
+
+        # If moving backward, cancel all active tasks for this deliverable to clean queues
+        if is_reverse_move:
+            pending_tasks = db.query(Task).filter(
+                Task.content_item_id == content.id,
+                Task.status.in_(["pending", "in_progress"])
+            ).all()
+            for pt in pending_tasks:
+                pt.status = "cancelled"
+                pt.notes = (pt.notes or "") + f"\n[Cancelled — Deliverable returned to {target_stage.name}]"
+
+            # Clear assigned specialist if returned to early stage
+            if target_stage.order_index <= 2:
+                content.assigned_user_id = None
 
         # If transitioning to a new stage, check if an appropriate folder exists in the workspace
         target_folder = db.query(Folder).filter(
@@ -208,8 +265,8 @@ class WorkflowService:
             )
             db.add(rejection)
 
-        # Update assigned user on content item if provided
-        if transition_req.assigned_user_id:
+        # Update assigned user on content item if provided (forward moves only)
+        if not is_reverse_move and transition_req.assigned_user_id:
             content.assigned_user_id = transition_req.assigned_user_id
 
         # Calculate target date if days allotted is provided
@@ -217,9 +274,9 @@ class WorkflowService:
         if not target_date and transition_req.days_allotted:
             target_date = date.today() + timedelta(days=transition_req.days_allotted)
 
-        # Determine task type to create for this transition
+        # Determine task type to create for this transition (forward moves only)
         target_task_type_id = transition.auto_create_task_type_id
-        if not target_task_type_id:
+        if not is_reverse_move and not target_task_type_id:
             stage_code = (target_stage.code or "").upper()
             stage_name = (target_stage.name or "").upper()
             if "EDIT" in stage_code or "EDIT" in stage_name:
@@ -232,8 +289,8 @@ class WorkflowService:
                     target_task_type_id = posting_tt.id
 
         # Resolve assigned staff: explicitly passed > client staff assignment
-        assigned_staff_id = transition_req.assigned_user_id
-        if not assigned_staff_id and transition.assignment_mode == "automatic" and target_task_type_id:
+        assigned_staff_id = transition_req.assigned_user_id if not is_reverse_move else None
+        if not assigned_staff_id and not is_reverse_move and transition.assignment_mode == "automatic" and target_task_type_id:
             staff_assign = db.query(ClientStaffAssignment).filter(
                 ClientStaffAssignment.client_id == content.client_id,
                 ClientStaffAssignment.task_type_id == target_task_type_id
@@ -242,7 +299,7 @@ class WorkflowService:
                 assigned_staff_id = staff_assign.user_id
 
         # Auto-complete any prior pending tasks on this content item for other task types
-        if target_task_type_id:
+        if not is_reverse_move and target_task_type_id:
             prior_tasks = db.query(Task).filter(
                 Task.content_item_id == content.id,
                 Task.status.in_(["pending", "in_progress"])
@@ -253,8 +310,8 @@ class WorkflowService:
                     pt.completed_at = datetime.now(timezone.utc)
                     pt.notes = (pt.notes or "") + f"\n[Auto-completed on stage transition to {target_stage.name}]"
 
-        # Create task if target task type is identified and we have an assignee or auto trigger
-        if target_task_type_id and (assigned_staff_id or transition.auto_create_task_type_id or transition_req.assigned_user_id):
+        # Create task if target task type is identified and we have an assignee or auto trigger (forward moves only)
+        if not is_reverse_move and target_task_type_id and (assigned_staff_id or transition.auto_create_task_type_id or transition_req.assigned_user_id):
             task_notes = transition_req.notes or f"Workflow transition: {action_clean}"
             TaskService.create_task(
                 db=db,
@@ -272,7 +329,7 @@ class WorkflowService:
 
         AuditService.log(
             db=db,
-            action="CONTENT_TRANSITION",
+            action="CONTENT_REVERT" if is_reverse_move else "CONTENT_TRANSITION",
             entity_type="content_item",
             entity_id=content.id,
             user_id=user_id,
@@ -282,7 +339,8 @@ class WorkflowService:
                 "action": action_clean,
                 "rejection_reason": transition_req.rejection_reason,
                 "assigned_to": str(assigned_staff_id) if assigned_staff_id else None,
-                "target_date": target_date.isoformat() if target_date else None
+                "target_date": target_date.isoformat() if target_date else None,
+                "is_revert": is_reverse_move
             }
         )
         db.commit()

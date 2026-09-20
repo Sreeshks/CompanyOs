@@ -285,7 +285,10 @@ def seed_database():
                 # Rejected - Needs Edit -> Editing
                 {"from": "REJECTED_NEEDS_EDIT", "to": "EDITING", "action": "Restart Editing"},
                 # Ready to Post -> Posted
-                {"from": "READY_TO_POST", "to": "POSTED", "action": "Mark Posted"}
+                {"from": "READY_TO_POST", "to": "POSTED", "action": "Mark Posted"},
+                # Reverse Transitions
+                {"from": "EDITING", "to": "SELECTED", "action": "Return to Selected"},
+                {"from": "SELECTED", "to": "RAW", "action": "Return to Raw"},
             ]
 
             for tr_def in transitions_def:

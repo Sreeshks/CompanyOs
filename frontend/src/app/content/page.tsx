@@ -261,10 +261,20 @@ export default function ContentPage() {
   const transitionMutation = useMutation({
     mutationFn: ({ id, action }: { id: string; action: string }) =>
       contentApi.transition(id, { action }),
-    onSuccess: () => {
+    onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ['content-items'] });
       queryClient.invalidateQueries({ queryKey: ['client-workspace-folders'] });
-      toast.success('Deliverable stage updated and moved to next folder');
+      queryClient.invalidateQueries({ queryKey: ['my-work'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      const isReturn =
+        vars.action.toLowerCase().includes('return') ||
+        vars.action.toLowerCase().includes('back') ||
+        vars.action.toLowerCase().includes('revert');
+      toast.success(
+        isReturn
+          ? 'Deliverable returned to previous folder'
+          : 'Deliverable stage updated and moved to next folder'
+      );
     },
     onError: (err: any) => {
       const msg = err?.response?.data?.detail || err?.response?.data?.error?.message || 'Failed to update stage';
@@ -296,8 +306,14 @@ export default function ContentPage() {
       queryClient.invalidateQueries({ queryKey: ['client-workspace-folders'] });
       queryClient.invalidateQueries({ queryKey: ['my-work'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      const isReturn =
+        vars.action.toLowerCase().includes('return') ||
+        vars.action.toLowerCase().includes('back') ||
+        vars.action.toLowerCase().includes('revert');
       toast.success(
-        vars.assigned_user_id
+        isReturn
+          ? `${vars.itemIds.length} item(s) returned to previous folder!`
+          : vars.assigned_user_id
           ? `${vars.itemIds.length} item(s) sent to Editing & assigned to specialist!`
           : `${vars.itemIds.length} item(s) advanced to the next working step!`
       );
@@ -335,6 +351,15 @@ export default function ContentPage() {
     if (s.includes('ready')) return { label: 'Mark as Posted', action: 'Mark Posted', nextFolder: 'Posted' };
     if (s.includes('posted')) return null;
     return { label: 'Send to Next Step', action: 'advance', nextFolder: 'Next Step' };
+  };
+
+  // Smart label helper for stage reversal / return to previous step
+  const getReturnStageAction = (stageName?: string) => {
+    const s = (stageName || '').toLowerCase();
+    if (s.includes('editing')) return { label: 'Return to Selected', action: 'Return to Selected', prevFolder: 'Selected' };
+    if (s.includes('selected')) return { label: 'Return to Raw', action: 'Return to Raw', prevFolder: 'Raw' };
+    if (s.includes('approval') || s.includes('pending')) return { label: 'Return to Editing', action: 'Restart Editing', prevFolder: 'Editing' };
+    return null;
   };
 
   // Open modal with prefilled client and folder
@@ -403,6 +428,18 @@ export default function ContentPage() {
     } else {
       setSelectedItemIds(new Set(currentFolderItems.map((item) => item.id)));
     }
+  };
+
+  // Action to return selected items back to previous step
+  const handleReturnSelectedToPrevStep = () => {
+    if (selectedItemIds.size === 0) return;
+    const returnAction = getReturnStageAction(activeFolder?.stage_name || activeFolder?.name);
+    if (!returnAction) return;
+
+    batchTransitionMutation.mutate({
+      itemIds: Array.from(selectedItemIds),
+      action: returnAction.action,
+    });
   };
 
   // Action to send all selected items to next step
@@ -1129,6 +1166,7 @@ export default function ContentPage() {
               {(() => {
                 const theme = getFolderTheme(activeFolder.name, activeFolder.stage_code);
                 const nextAction = getStageAction(activeFolder.stage_name || activeFolder.name);
+                const returnAction = getReturnStageAction(activeFolder.stage_name || activeFolder.name);
                 const IconComp = theme.icon;
 
                 return (
@@ -1199,6 +1237,19 @@ export default function ContentPage() {
                         <Plus className="w-3.5 h-3.5" />
                         <span>Add File to {activeFolder.name}</span>
                       </button>
+
+                      {/* "Return to Previous Step" batch return button */}
+                      {returnAction && selectedItemIds.size > 0 && (
+                        <button
+                          onClick={handleReturnSelectedToPrevStep}
+                          disabled={batchTransitionMutation.isPending}
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-all cursor-pointer shadow-sm hover:bg-[var(--accent)] text-zinc-300 hover:text-white"
+                          style={{ borderColor: 'var(--border)' }}
+                        >
+                          <ArrowLeft className="w-3.5 h-3.5" />
+                          <span>Return {selectedItemIds.size} to {returnAction.prevFolder}</span>
+                        </button>
+                      )}
 
                       {/* "Send to Next Step" batch progression button */}
                       {nextAction && (
@@ -1556,6 +1607,7 @@ export default function ContentPage() {
                   {currentFolderItems.map((item) => {
                     const isSelected = selectedItemIds.has(item.id);
                     const next = getStageAction(item.stage_name || activeFolder.stage_name);
+                    const prev = getReturnStageAction(item.stage_name || activeFolder.stage_name);
                     const hasImage = !!(item.thumbnail_url || item.image_url);
 
                     return (
@@ -1671,51 +1723,70 @@ export default function ContentPage() {
                             </div>
                           </div>
 
-                          {/* Card Bottom: Individual Send to Next Step Button */}
-                          <div className="pt-3 border-t flex items-center justify-between text-xs" style={{ borderColor: 'var(--border)' }}>
+                          {/* Card Bottom: Return / Move to Next Step Buttons */}
+                          <div className="pt-3 border-t flex items-center justify-between text-xs gap-2" style={{ borderColor: 'var(--border)' }}>
                             <span className="font-mono text-[11px]" style={{ color: 'var(--muted-foreground)' }}>
                               #{item.sequence_number || 1}
                             </span>
 
-                            {next ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const isEditing =
-                                    next.nextFolder?.toLowerCase().includes('edit') ||
-                                    next.action?.toLowerCase().includes('edit') ||
-                                    (activeFolder?.name || '').toLowerCase().includes('select');
+                            <div className="flex items-center gap-1.5">
+                              {prev && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    transitionMutation.mutate({ id: item.id, action: prev.action });
+                                  }}
+                                  disabled={transitionMutation.isPending || batchTransitionMutation.isPending}
+                                  className="flex items-center gap-1 px-2 py-1 rounded text-xs border hover:bg-[var(--accent)] transition-colors cursor-pointer text-zinc-400 hover:text-zinc-200"
+                                  style={{ borderColor: 'var(--border)' }}
+                                  title={prev.label}
+                                >
+                                  <ArrowLeft className="w-3 h-3" />
+                                  <span>Return</span>
+                                </button>
+                              )}
 
-                                  if (isEditing) {
-                                    setAssignData({
-                                      assigned_user_id: staff[0]?.id || '',
-                                      days_allotted: 2,
-                                      custom_date: '',
-                                      use_custom_date: false,
-                                      priority: 'medium',
-                                      notes: '',
-                                      pendingItemIds: [item.id],
-                                      action: next.action,
-                                    });
-                                    setIsAssignModalOpen(true);
-                                  } else {
-                                    transitionMutation.mutate({ id: item.id, action: next.action });
-                                  }
-                                }}
-                                disabled={transitionMutation.isPending || batchTransitionMutation.isPending}
-                                className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold border hover:bg-[var(--accent)] transition-colors cursor-pointer disabled:opacity-50"
-                                style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}
-                              >
-                                <span>{next.label}</span>
-                                <ArrowRight className="w-3 h-3" />
-                              </button>
-                            ) : (
-                              <span className="text-[11px] font-medium text-emerald-500 flex items-center gap-1">
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>Completed</span>
-                              </span>
-                            )}
+                              {next ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const isEditing =
+                                      next.nextFolder?.toLowerCase().includes('edit') ||
+                                      next.action?.toLowerCase().includes('edit') ||
+                                      (activeFolder?.name || '').toLowerCase().includes('select');
+
+                                    if (isEditing) {
+                                      setAssignData({
+                                        assigned_user_id: staff[0]?.id || '',
+                                        days_allotted: 2,
+                                        custom_date: '',
+                                        use_custom_date: false,
+                                        priority: 'medium',
+                                        notes: '',
+                                        pendingItemIds: [item.id],
+                                        action: next.action,
+                                      });
+                                      setIsAssignModalOpen(true);
+                                    } else {
+                                      transitionMutation.mutate({ id: item.id, action: next.action });
+                                    }
+                                  }}
+                                  disabled={transitionMutation.isPending || batchTransitionMutation.isPending}
+                                  className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold border hover:bg-[var(--accent)] transition-colors cursor-pointer disabled:opacity-50"
+                                  style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}
+                                >
+                                  <span>{next.label}</span>
+                                  <ArrowRight className="w-3 h-3" />
+                                </button>
+                              ) : (
+                                <span className="text-[11px] font-medium text-emerald-500 flex items-center gap-1">
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Completed</span>
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1754,6 +1825,7 @@ export default function ContentPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredGlobalItems.map((item) => {
                 const next = getStageAction(item.stage_name);
+                const prev = getReturnStageAction(item.stage_name);
                 return (
                   <div
                     key={item.id}
@@ -1803,25 +1875,40 @@ export default function ContentPage() {
                       </div>
                     </div>
 
-                    <div className="pt-3 border-t flex items-center justify-between text-xs" style={{ borderColor: 'var(--border)' }}>
+                    <div className="pt-3 border-t flex items-center justify-between text-xs gap-2" style={{ borderColor: 'var(--border)' }}>
                       <span style={{ color: 'var(--muted-foreground)' }}>#{item.sequence_number || 1}</span>
 
-                      {next ? (
-                        <button
-                          onClick={() => transitionMutation.mutate({ id: item.id, action: next.action })}
-                          disabled={transitionMutation.isPending}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium border hover:bg-[var(--accent)] transition-colors cursor-pointer disabled:opacity-50"
-                          style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}
-                        >
-                          <span>{next.label}</span>
-                          <ArrowRight className="w-3 h-3" />
-                        </button>
-                      ) : (
-                        <span className="text-[11px] font-medium text-emerald-500 flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Published</span>
-                        </span>
-                      )}
+                      <div className="flex items-center gap-1.5">
+                        {prev && (
+                          <button
+                            onClick={() => transitionMutation.mutate({ id: item.id, action: prev.action })}
+                            disabled={transitionMutation.isPending}
+                            className="flex items-center gap-1 px-2 py-1 rounded text-xs border hover:bg-[var(--accent)] transition-colors cursor-pointer text-zinc-400 hover:text-zinc-200 disabled:opacity-50"
+                            style={{ borderColor: 'var(--border)' }}
+                            title={prev.label}
+                          >
+                            <ArrowLeft className="w-3 h-3" />
+                            <span>Return</span>
+                          </button>
+                        )}
+
+                        {next ? (
+                          <button
+                            onClick={() => transitionMutation.mutate({ id: item.id, action: next.action })}
+                            disabled={transitionMutation.isPending}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium border hover:bg-[var(--accent)] transition-colors cursor-pointer disabled:opacity-50"
+                            style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}
+                          >
+                            <span>{next.label}</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </button>
+                        ) : (
+                          <span className="text-[11px] font-medium text-emerald-500 flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Published</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -1856,6 +1943,7 @@ export default function ContentPage() {
               <tbody className="divide-y" style={{ borderColor: 'var(--border)' }}>
                 {filteredGlobalItems.map((item) => {
                   const next = getStageAction(item.stage_name);
+                  const prev = getReturnStageAction(item.stage_name);
                   return (
                     <tr key={item.id} className="hover:bg-[var(--accent)]/40 transition-colors">
                       <td className="px-6 py-3">
@@ -1876,18 +1964,33 @@ export default function ContentPage() {
                         {item.assigned_user_name || 'Unassigned'}
                       </td>
                       <td className="px-6 py-3 text-right">
-                        {next ? (
-                          <button
-                            onClick={() => transitionMutation.mutate({ id: item.id, action: next.action })}
-                            disabled={transitionMutation.isPending}
-                            className="px-2.5 py-1 rounded text-xs font-medium border hover:bg-[var(--accent)] transition-colors cursor-pointer disabled:opacity-50"
-                            style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}
-                          >
-                            {next.label}
-                          </button>
-                        ) : (
-                          <span className="text-xs font-medium text-emerald-500">Published</span>
-                        )}
+                        <div className="flex items-center justify-end gap-1.5">
+                          {prev && (
+                            <button
+                              onClick={() => transitionMutation.mutate({ id: item.id, action: prev.action })}
+                              disabled={transitionMutation.isPending}
+                              className="flex items-center gap-1 px-2 py-1 rounded text-xs border hover:bg-[var(--accent)] transition-colors cursor-pointer text-zinc-400 hover:text-zinc-200 disabled:opacity-50"
+                              style={{ borderColor: 'var(--border)' }}
+                              title={prev.label}
+                            >
+                              <ArrowLeft className="w-3 h-3" />
+                              <span>Return</span>
+                            </button>
+                          )}
+
+                          {next ? (
+                            <button
+                              onClick={() => transitionMutation.mutate({ id: item.id, action: next.action })}
+                              disabled={transitionMutation.isPending}
+                              className="px-2.5 py-1 rounded text-xs font-medium border hover:bg-[var(--accent)] transition-colors cursor-pointer disabled:opacity-50"
+                              style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}
+                            >
+                              {next.label}
+                            </button>
+                          ) : (
+                            <span className="text-xs font-medium text-emerald-500">Published</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
