@@ -44,6 +44,11 @@ class TaskOut(TaskBase):
     task_type_name: Optional[str] = None
     workflow_stage_name: Optional[str] = None
     content_item_name: Optional[str] = None
+    folder_id: Optional[uuid.UUID] = None
+    content_item_thumbnail: Optional[str] = None
+    content_item_image: Optional[str] = None
+    content_item_stage_id: Optional[uuid.UUID] = None
+    content_item_stage_name: Optional[str] = None
     assigned_to_name: Optional[str] = None
     assigned_by: Optional[uuid.UUID] = None
     assigned_by_name: Optional[str] = None

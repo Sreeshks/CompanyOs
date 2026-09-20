@@ -142,7 +142,17 @@ export default function ContentPage() {
 
   const activeFolder = useMemo(() => {
     if (!selectedFolderId) return null;
-    return clientFolders.find((f) => f.id === selectedFolderId);
+    const findRecursive = (folders: FolderTreeType[]): FolderTreeType | null => {
+      for (const f of folders) {
+        if (f.id === selectedFolderId) return f;
+        if (f.subfolders && f.subfolders.length > 0) {
+          const found = findRecursive(f.subfolders);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    return findRecursive(clientFolders);
   }, [clientFolders, selectedFolderId]);
 
   // Order workflow folders cleanly by step
@@ -1263,9 +1273,8 @@ export default function ContentPage() {
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDropFiles}
-                className={`rounded-xl border-2 border-dashed p-6 text-center transition-all duration-200 ${
-                  isDragging ? 'scale-[1.01]' : ''
-                }`}
+                className={`rounded-xl border-2 border-dashed p-6 text-center transition-all duration-200 ${isDragging ? 'scale-[1.01]' : ''
+                  }`}
                 style={{
                   borderColor: isDragging ? '#10b981' : 'var(--border)',
                   backgroundColor: isDragging ? 'rgba(16, 185, 129, 0.06)' : 'transparent',

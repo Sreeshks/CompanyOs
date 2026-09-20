@@ -12,9 +12,11 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/loading-skeleton';
 import { myWorkApi } from '@/lib/api/my-work';
 import { tasksApi } from '@/lib/api/tasks';
+import { contentApi } from '@/lib/api/content';
 import {
   ClipboardList, Clock, CheckCircle2, AlertTriangle,
-  ExternalLink, Calendar, User, X, Check, ArrowRight, FolderOpen
+  ExternalLink, Calendar, User, X, Check, ArrowRight, FolderOpen,
+  Send, Loader2, Sparkles
 } from 'lucide-react';
 import type { Task } from '@/types/task';
 import { useRouter } from 'next/navigation';
@@ -173,6 +175,32 @@ export default function MyWorkPage() {
     },
     onError: (err: any) => {
       toast.error(err?.response?.data?.detail || 'Failed to complete task');
+    },
+  });
+
+  const submitForApprovalMutation = useMutation({
+    mutationFn: async ({ taskId, contentItemId }: { taskId: string; contentItemId: string }) => {
+      // 1. Advance content deliverable to "Pending Client Approval"
+      await contentApi.transition(contentItemId, {
+        action: 'Submit for Approval',
+        notes: 'Completed editing, submitted for client approval',
+      });
+      // 2. Mark the editing task as completed
+      await tasksApi.complete(taskId, {
+        notes: 'Completed editing & submitted for client approval',
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['my-work'] });
+      queryClient.invalidateQueries({ queryKey: ['content-items'] });
+      queryClient.invalidateQueries({ queryKey: ['client-workspace-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      toast.success('Deliverable moved to Pending Client Approval & editing task completed!');
+      setSelectedTask(null);
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.detail || err?.response?.data?.error?.message || 'Failed to submit for client approval';
+      toast.error(typeof msg === 'string' ? msg : JSON.stringify(msg));
     },
   });
 
@@ -377,39 +405,90 @@ export default function MyWorkPage() {
             )}
 
             {selectedTask.content_item_name && (
-              <div className="p-3 rounded-lg border flex items-center justify-between text-xs" style={{ backgroundColor: 'var(--accent)', borderColor: 'var(--border)' }}>
-                <div>
-                  <span className="text-[10px] uppercase tracking-wider block" style={{ color: 'var(--muted-foreground)' }}>
-                    Linked Asset Deliverable
-                  </span>
-                  <span className="font-medium" style={{ color: 'var(--foreground)' }}>
-                    {selectedTask.content_item_name}
-                  </span>
+              <div className="p-3.5 rounded-lg border flex items-center justify-between gap-3 text-xs" style={{ backgroundColor: 'var(--accent)', borderColor: 'var(--border)' }}>
+                <div className="flex items-center gap-3 min-w-0">
+                  {(selectedTask.content_item_thumbnail || selectedTask.content_item_image) ? (
+                    <div className="w-12 h-12 rounded-lg border overflow-hidden flex-shrink-0 relative bg-black/20" style={{ borderColor: 'var(--border)' }}>
+                      <img
+                        src={selectedTask.content_item_thumbnail || selectedTask.content_item_image}
+                        alt={selectedTask.content_item_name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  ) : null}
+                  <div className="min-w-0">
+                    <span className="text-[10px] uppercase tracking-wider block" style={{ color: 'var(--muted-foreground)' }}>
+                      Linked Asset Deliverable
+                    </span>
+                    <span className="font-semibold truncate block" style={{ color: 'var(--foreground)' }}>
+                      {selectedTask.content_item_name}
+                    </span>
+                    {selectedTask.content_item_stage_name && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-mono inline-block mt-0.5" style={{ backgroundColor: 'var(--surface)', color: 'var(--primary)' }}>
+                        Stage: {selectedTask.content_item_stage_name}
+                      </span>
+                    )}
+                  </div>
                 </div>
+
                 <button
                   type="button"
-                  onClick={() => router.push(`/content?client_id=${selectedTask.client_id}`)}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium border bg-transparent hover:bg-[var(--surface)] transition-colors cursor-pointer"
+                  onClick={() => {
+                    const folderParam = selectedTask.folder_id ? `&folder_id=${selectedTask.folder_id}` : '';
+                    router.push(`/content?client_id=${selectedTask.client_id}${folderParam}`);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border bg-transparent hover:bg-[var(--surface)] transition-all cursor-pointer flex-shrink-0 shadow-sm"
                   style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}
                 >
-                  <FolderOpen className="w-3 h-3" />
-                  <span>View Asset in Workspace</span>
+                  <FolderOpen className="w-3.5 h-3.5" />
+                  <span>Open Folder in Content</span>
                 </button>
               </div>
             )}
 
             {/* Actions */}
-            <div className="flex items-center justify-between pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
-              <div>
+            <div className="flex items-center justify-between pt-4 border-t gap-2 flex-wrap" style={{ borderColor: 'var(--border)' }}>
+              <div className="flex items-center gap-2">
+                {selectedTask.status !== 'completed' && selectedTask.content_item_id && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      submitForApprovalMutation.mutate({
+                        taskId: selectedTask.id,
+                        contentItemId: selectedTask.content_item_id!,
+                      })
+                    }
+                    disabled={submitForApprovalMutation.isPending || completeMutation.isPending}
+                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold disabled:opacity-50 cursor-pointer shadow-md hover:scale-[1.01] transition-transform"
+                    style={{
+                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      color: '#ffffff',
+                    }}
+                  >
+                    {submitForApprovalMutation.isPending ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Submitting to Approval...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Submit for Client Approval ➔</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
                 {selectedTask.status !== 'completed' && (
                   <button
                     type="button"
                     onClick={() => completeMutation.mutate(selectedTask.id)}
-                    disabled={completeMutation.isPending}
-                    className="flex items-center gap-1.5 btn-metallic px-4 py-2 rounded-lg text-xs font-medium disabled:opacity-50 cursor-pointer"
+                    disabled={completeMutation.isPending || submitForApprovalMutation.isPending}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-medium border transition-colors disabled:opacity-50 cursor-pointer hover:bg-[var(--accent)]"
+                    style={{ borderColor: 'var(--border)', color: 'var(--foreground)' }}
                   >
                     <Check className="w-3.5 h-3.5" />
-                    <span>{completeMutation.isPending ? 'Completing...' : 'Mark as Completed'}</span>
+                    <span>{completeMutation.isPending ? 'Completing...' : 'Mark Completed'}</span>
                   </button>
                 )}
               </div>

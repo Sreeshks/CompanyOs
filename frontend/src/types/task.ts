@@ -19,6 +19,11 @@ export interface Task {
   task_type_name?: string;
   workflow_stage_name?: string;
   content_item_name?: string;
+  folder_id?: string;
+  content_item_thumbnail?: string;
+  content_item_image?: string;
+  content_item_stage_id?: string;
+  content_item_stage_name?: string;
   assigned_to_name?: string;
   assigned_by?: string;
   assigned_by_name?: string;

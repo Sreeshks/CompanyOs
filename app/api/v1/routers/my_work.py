@@ -18,7 +18,13 @@ def _format_tasks(tasks, total, page, page_size):
         to.client_name = t.client.business_name if t.client else None
         to.task_type_name = t.task_type.name if t.task_type else None
         to.workflow_stage_name = t.workflow_stage.name if t.workflow_stage else None
-        to.content_item_name = t.content_item.display_name if t.content_item else None
+        if t.content_item:
+            to.content_item_name = t.content_item.display_name
+            to.folder_id = t.content_item.folder_id
+            to.content_item_thumbnail = t.content_item.thumbnail_url
+            to.content_item_image = t.content_item.image_url
+            to.content_item_stage_id = t.content_item.current_stage_id
+            to.content_item_stage_name = t.content_item.current_stage.name if t.content_item.current_stage else None
         to.assigned_to_name = t.assignee.full_name if t.assignee else None
         to.assigned_by_name = t.creator.full_name if t.creator else None
         results.append(to)
