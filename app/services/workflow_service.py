@@ -1,7 +1,8 @@
 import uuid
 from typing import Optional, List, Tuple, Dict, Any
+from datetime import datetime, date, timedelta, timezone
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from app.core.exceptions import AppException, NotFoundException, InvalidWorkflowTransitionException
 from app.models.content import ContentItem, ContentType
 from app.models.workflow import Workflow, WorkflowStage, WorkflowTransition
@@ -10,6 +11,8 @@ from app.models.client import Client, ClientStaffAssignment
 from app.models.workspace import Workspace
 from app.models.rejection import Rejection
 from app.models.approval import ClientApproval
+from app.models.task import Task
+from app.models.task_type import TaskType
 from app.schemas.content import ContentItemCreate, ContentItemUpdate, ContentTransitionRequest
 from app.services.audit_service import AuditService
 from app.services.task_service import TaskService
@@ -205,29 +208,66 @@ class WorkflowService:
             )
             db.add(rejection)
 
-        # Trigger automatic task creation if defined on the transition
-        if transition.auto_create_task_type_id:
-            assigned_staff_id = None
-            if transition.assignment_mode == "automatic":
-                # Look up client staff assignment for this task type
-                staff_assign = db.query(ClientStaffAssignment).filter(
-                    ClientStaffAssignment.client_id == content.client_id,
-                    ClientStaffAssignment.task_type_id == transition.auto_create_task_type_id
-                ).first()
-                if staff_assign:
-                    assigned_staff_id = staff_assign.user_id
+        # Update assigned user on content item if provided
+        if transition_req.assigned_user_id:
+            content.assigned_user_id = transition_req.assigned_user_id
 
-            # Create the task inside the same transaction
+        # Calculate target date if days allotted is provided
+        target_date = transition_req.target_date
+        if not target_date and transition_req.days_allotted:
+            target_date = date.today() + timedelta(days=transition_req.days_allotted)
+
+        # Determine task type to create for this transition
+        target_task_type_id = transition.auto_create_task_type_id
+        if not target_task_type_id:
+            stage_code = (target_stage.code or "").upper()
+            stage_name = (target_stage.name or "").upper()
+            if "EDIT" in stage_code or "EDIT" in stage_name:
+                editing_tt = db.query(TaskType).filter(or_(TaskType.code == "EDITING", func.lower(TaskType.name) == "editing")).first()
+                if editing_tt:
+                    target_task_type_id = editing_tt.id
+            elif "POST" in stage_code or "POST" in stage_name:
+                posting_tt = db.query(TaskType).filter(or_(TaskType.code == "POSTING", func.lower(TaskType.name) == "posting")).first()
+                if posting_tt:
+                    target_task_type_id = posting_tt.id
+
+        # Resolve assigned staff: explicitly passed > client staff assignment
+        assigned_staff_id = transition_req.assigned_user_id
+        if not assigned_staff_id and transition.assignment_mode == "automatic" and target_task_type_id:
+            staff_assign = db.query(ClientStaffAssignment).filter(
+                ClientStaffAssignment.client_id == content.client_id,
+                ClientStaffAssignment.task_type_id == target_task_type_id
+            ).first()
+            if staff_assign:
+                assigned_staff_id = staff_assign.user_id
+
+        # Auto-complete any prior pending tasks on this content item for other task types
+        if target_task_type_id:
+            prior_tasks = db.query(Task).filter(
+                Task.content_item_id == content.id,
+                Task.status.in_(["pending", "in_progress"])
+            ).all()
+            for pt in prior_tasks:
+                if pt.task_type_id != target_task_type_id:
+                    pt.status = "completed"
+                    pt.completed_at = datetime.now(timezone.utc)
+                    pt.notes = (pt.notes or "") + f"\n[Auto-completed on stage transition to {target_stage.name}]"
+
+        # Create task if target task type is identified and we have an assignee or auto trigger
+        if target_task_type_id and (assigned_staff_id or transition.auto_create_task_type_id or transition_req.assigned_user_id):
+            task_notes = transition_req.notes or f"Workflow transition: {action_clean}"
             TaskService.create_task(
                 db=db,
                 client_id=content.client_id,
                 workspace_id=content.workspace_id,
                 content_item_id=content.id,
-                task_type_id=transition.auto_create_task_type_id,
+                task_type_id=target_task_type_id,
                 workflow_stage_id=target_stage.id,
                 assigned_to=assigned_staff_id,
                 assigned_by=user_id,
-                notes=f"Auto-generated on workflow transition: {action_clean}"
+                priority=transition_req.priority or "medium",
+                target_date=target_date,
+                notes=task_notes
             )
 
         AuditService.log(
@@ -240,7 +280,9 @@ class WorkflowService:
             new_data={
                 "stage": target_stage.name,
                 "action": action_clean,
-                "rejection_reason": transition_req.rejection_reason
+                "rejection_reason": transition_req.rejection_reason,
+                "assigned_to": str(assigned_staff_id) if assigned_staff_id else None,
+                "target_date": target_date.isoformat() if target_date else None
             }
         )
         db.commit()
@@ -254,10 +296,22 @@ class WorkflowService:
         action: str,
         rejection_reason: Optional[str] = None,
         notes: Optional[str] = None,
+        assigned_user_id: Optional[uuid.UUID] = None,
+        target_date: Optional[date] = None,
+        days_allotted: Optional[int] = None,
+        priority: Optional[str] = "medium",
         user_id: Optional[uuid.UUID] = None
     ) -> List[ContentItem]:
         results = []
-        req = ContentTransitionRequest(action=action, rejection_reason=rejection_reason, notes=notes)
+        req = ContentTransitionRequest(
+            action=action,
+            rejection_reason=rejection_reason,
+            notes=notes,
+            assigned_user_id=assigned_user_id,
+            target_date=target_date,
+            days_allotted=days_allotted,
+            priority=priority
+        )
         for item_id in item_ids:
             item = WorkflowService.transition_content(
                 db=db,

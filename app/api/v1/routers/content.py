@@ -73,6 +73,10 @@ def batch_transition_content(
         action=req.action,
         rejection_reason=req.rejection_reason,
         notes=req.notes,
+        assigned_user_id=req.assigned_user_id,
+        target_date=req.target_date,
+        days_allotted=req.days_allotted,
+        priority=req.priority,
         user_id=current_user.id
     )
     results = []

@@ -47,9 +47,7 @@ class GUID(TypeDecorator):
 
 def get_json_type():
     """Returns PG_JSONB when running on PostgreSQL, otherwise standard JSON."""
-    if "postgresql" in settings.DATABASE_URL:
-        return PG_JSONB
-    return JSON
+    return JSON().with_variant(PG_JSONB, "postgresql")
 
 
 # Connect args for SQLite

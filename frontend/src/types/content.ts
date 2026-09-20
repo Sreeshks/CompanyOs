@@ -60,6 +60,10 @@ export interface ContentTransitionRequest {
   rejection_reason?: string;
   notes?: string;
   extra_fields?: Record<string, unknown>;
+  assigned_user_id?: string;
+  target_date?: string;
+  days_allotted?: number;
+  priority?: string;
 }
 
 export interface ContentBatchTransitionRequest {
@@ -68,6 +72,10 @@ export interface ContentBatchTransitionRequest {
   rejection_reason?: string;
   notes?: string;
   extra_fields?: Record<string, unknown>;
+  assigned_user_id?: string;
+  target_date?: string;
+  days_allotted?: number;
+  priority?: string;
 }
 
 export interface ContentMoveFolderRequest {

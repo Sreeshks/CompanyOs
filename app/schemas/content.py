@@ -1,6 +1,6 @@
 import uuid
 from typing import Optional, Dict, Any, List
-from datetime import datetime
+from datetime import datetime, date
 from pydantic import BaseModel, ConfigDict
 
 
@@ -39,6 +39,10 @@ class ContentTransitionRequest(BaseModel):
     rejection_reason: Optional[str] = None
     notes: Optional[str] = None
     extra_fields: Optional[Dict[str, Any]] = None
+    assigned_user_id: Optional[uuid.UUID] = None
+    target_date: Optional[date] = None
+    days_allotted: Optional[int] = None
+    priority: Optional[str] = "medium"
 
 
 class ContentBatchTransitionRequest(BaseModel):
@@ -47,6 +51,10 @@ class ContentBatchTransitionRequest(BaseModel):
     rejection_reason: Optional[str] = None
     notes: Optional[str] = None
     extra_fields: Optional[Dict[str, Any]] = None
+    assigned_user_id: Optional[uuid.UUID] = None
+    target_date: Optional[date] = None
+    days_allotted: Optional[int] = None
+    priority: Optional[str] = "medium"
 
 
 class ContentMoveFolderRequest(BaseModel):

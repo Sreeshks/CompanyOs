@@ -29,6 +29,19 @@ const tabs: { key: TabFilter; label: string; icon: React.ElementType; color: str
   { key: 'overdue', label: 'Overdue', icon: AlertTriangle, color: 'var(--danger)' },
 ];
 
+function getDeadlineInfo(targetDate?: string | null) {
+  if (!targetDate) return null;
+  const target = new Date(targetDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  target.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return { label: `${Math.abs(diffDays)}d overdue`, isOverdue: true };
+  if (diffDays === 0) return { label: 'Due today', isToday: true };
+  if (diffDays === 1) return { label: 'Due tomorrow', isUpcoming: true };
+  return { label: `${diffDays} days left`, isUpcoming: true };
+}
+
 function TaskCard({ task, onSelect }: { task: Task; onSelect: (task: Task) => void }) {
   const priorityColors: Record<string, string> = {
     urgent: 'var(--danger)',
@@ -36,6 +49,8 @@ function TaskCard({ task, onSelect }: { task: Task; onSelect: (task: Task) => vo
     medium: 'var(--info)',
     low: 'var(--muted-foreground)',
   };
+
+  const deadline = getDeadlineInfo(task.target_date);
 
   return (
     <div
@@ -45,13 +60,32 @@ function TaskCard({ task, onSelect }: { task: Task; onSelect: (task: Task) => vo
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="text-xs font-mono" style={{ color: 'var(--muted-foreground)' }}>
               {task.task_code}
             </span>
             <StatusBadge variant={getStatusVariant(task.status)}>
               {task.status.replace(/_/g, ' ')}
             </StatusBadge>
+            {deadline && (
+              <span
+                className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                style={{
+                  backgroundColor: deadline.isOverdue
+                    ? 'rgba(239, 68, 68, 0.15)'
+                    : deadline.isToday
+                    ? 'rgba(245, 158, 11, 0.15)'
+                    : 'var(--accent)',
+                  color: deadline.isOverdue
+                    ? '#ef4444'
+                    : deadline.isToday
+                    ? '#f59e0b'
+                    : 'var(--primary)',
+                }}
+              >
+                {deadline.label}
+              </span>
+            )}
           </div>
           <h3 className="text-sm font-semibold truncate group-hover:text-[var(--primary)] transition-colors" style={{ color: 'var(--foreground)' }}>
             {task.client_name}
@@ -311,11 +345,36 @@ export default function MyWorkPage() {
                 <span className="text-[10px] uppercase tracking-wider block mb-1" style={{ color: 'var(--muted-foreground)' }}>
                   Target Due Date
                 </span>
-                <span className="font-semibold" style={{ color: 'var(--foreground)' }}>
-                  {selectedTask.target_date ? new Date(selectedTask.target_date).toLocaleDateString() : 'No date set'}
-                </span>
+                <div className="font-semibold flex items-center gap-1.5 flex-wrap" style={{ color: 'var(--foreground)' }}>
+                  <span>{selectedTask.target_date ? new Date(selectedTask.target_date).toLocaleDateString() : 'No date set'}</span>
+                  {(() => {
+                    const d = getDeadlineInfo(selectedTask.target_date);
+                    return d ? (
+                      <span
+                        className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                        style={{
+                          backgroundColor: d.isOverdue ? 'rgba(239, 68, 68, 0.15)' : 'var(--accent)',
+                          color: d.isOverdue ? '#ef4444' : 'var(--primary)',
+                        }}
+                      >
+                        {d.label}
+                      </span>
+                    ) : null;
+                  })()}
+                </div>
               </div>
             </div>
+
+            {selectedTask.notes && (
+              <div className="p-3 rounded-lg border space-y-1 text-xs" style={{ backgroundColor: 'var(--background)', borderColor: 'var(--border)' }}>
+                <span className="text-[10px] uppercase tracking-wider font-semibold block" style={{ color: 'var(--muted-foreground)' }}>
+                  Editing Instructions / Brief
+                </span>
+                <p className="text-xs whitespace-pre-wrap leading-relaxed" style={{ color: 'var(--foreground)' }}>
+                  {selectedTask.notes}
+                </p>
+              </div>
+            )}
 
             {selectedTask.content_item_name && (
               <div className="p-3 rounded-lg border flex items-center justify-between text-xs" style={{ backgroundColor: 'var(--accent)', borderColor: 'var(--border)' }}>
@@ -329,12 +388,12 @@ export default function MyWorkPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => router.push('/content')}
+                  onClick={() => router.push(`/content?client_id=${selectedTask.client_id}`)}
                   className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-medium border bg-transparent hover:bg-[var(--surface)] transition-colors cursor-pointer"
                   style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}
                 >
                   <FolderOpen className="w-3 h-3" />
-                  <span>View Asset</span>
+                  <span>View Asset in Workspace</span>
                 </button>
               </div>
             )}

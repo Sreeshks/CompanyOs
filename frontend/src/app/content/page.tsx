@@ -13,7 +13,8 @@ import {
   User, Calendar, CheckCircle2, ArrowRight, Video, Image as ImageIcon,
   Sparkles, ExternalLink, X, ArrowLeft, ChevronRight,
   FolderTree, CheckSquare, Square, Scissors, ShieldCheck,
-  Upload, UploadCloud, Loader2, Trash2, Edit3, Eye, ZoomIn
+  Upload, UploadCloud, Loader2, Trash2, Edit3, Eye, ZoomIn,
+  Clock, Send, AlertCircle
 } from 'lucide-react';
 import { contentApi } from '@/lib/api/content';
 import { clientsApi } from '@/lib/api/clients';
@@ -54,6 +55,19 @@ export default function ContentPage() {
     target_month: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
     sequence_number: 1,
     assigned_user_id: '',
+  });
+
+  // Assign Editor & Project Days modal state
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [assignData, setAssignData] = useState({
+    assigned_user_id: '',
+    days_allotted: 2,
+    custom_date: '',
+    use_custom_date: false,
+    priority: 'medium',
+    notes: '',
+    pendingItemIds: [] as string[],
+    action: 'Start Editing',
   });
 
   // Image upload states
@@ -249,13 +263,36 @@ export default function ContentPage() {
   });
 
   const batchTransitionMutation = useMutation({
-    mutationFn: ({ itemIds, action }: { itemIds: string[]; action: string }) =>
-      contentApi.batchTransition({ item_ids: itemIds, action }),
+    mutationFn: (payload: {
+      itemIds: string[];
+      action: string;
+      assigned_user_id?: string;
+      target_date?: string;
+      days_allotted?: number;
+      priority?: string;
+      notes?: string;
+    }) =>
+      contentApi.batchTransition({
+        item_ids: payload.itemIds,
+        action: payload.action,
+        assigned_user_id: payload.assigned_user_id,
+        target_date: payload.target_date,
+        days_allotted: payload.days_allotted,
+        priority: payload.priority,
+        notes: payload.notes,
+      }),
     onSuccess: (res, vars) => {
       queryClient.invalidateQueries({ queryKey: ['content-items'] });
       queryClient.invalidateQueries({ queryKey: ['client-workspace-folders'] });
-      toast.success(`${vars.itemIds.length} item(s) advanced to the next working step!`);
+      queryClient.invalidateQueries({ queryKey: ['my-work'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      toast.success(
+        vars.assigned_user_id
+          ? `${vars.itemIds.length} item(s) sent to Editing & assigned to specialist!`
+          : `${vars.itemIds.length} item(s) advanced to the next working step!`
+      );
       setSelectedItemIds(new Set());
+      setIsAssignModalOpen(false);
     },
     onError: (err: any) => {
       const msg = err?.response?.data?.detail || err?.response?.data?.error?.message || 'Batch transition failed';
@@ -367,9 +404,56 @@ export default function ContentPage() {
       return;
     }
 
+    const isSendingToEditing =
+      nextAction.nextFolder?.toLowerCase().includes('edit') ||
+      nextAction.action?.toLowerCase().includes('edit') ||
+      (activeFolder?.name || '').toLowerCase().includes('select');
+
+    if (isSendingToEditing) {
+      setAssignData({
+        assigned_user_id: staff[0]?.id || '',
+        days_allotted: 2,
+        custom_date: '',
+        use_custom_date: false,
+        priority: 'medium',
+        notes: '',
+        pendingItemIds: Array.from(selectedItemIds),
+        action: nextAction.action,
+      });
+      setIsAssignModalOpen(true);
+      return;
+    }
+
     batchTransitionMutation.mutate({
       itemIds: Array.from(selectedItemIds),
       action: nextAction.action,
+    });
+  };
+
+  const handleConfirmAssignment = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assignData.assigned_user_id) {
+      toast.error('Please select an editor / specialist');
+      return;
+    }
+    if (assignData.pendingItemIds.length === 0) {
+      toast.error('No items selected');
+      return;
+    }
+
+    let targetDateStr: string | undefined = undefined;
+    if (assignData.use_custom_date && assignData.custom_date) {
+      targetDateStr = assignData.custom_date;
+    }
+
+    batchTransitionMutation.mutate({
+      itemIds: assignData.pendingItemIds,
+      action: assignData.action,
+      assigned_user_id: assignData.assigned_user_id,
+      days_allotted: !assignData.use_custom_date ? assignData.days_allotted : undefined,
+      target_date: targetDateStr,
+      priority: assignData.priority,
+      notes: assignData.notes.trim() || undefined,
     });
   };
 
@@ -1589,9 +1673,28 @@ export default function ContentPage() {
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  transitionMutation.mutate({ id: item.id, action: next.action });
+                                  const isEditing =
+                                    next.nextFolder?.toLowerCase().includes('edit') ||
+                                    next.action?.toLowerCase().includes('edit') ||
+                                    (activeFolder?.name || '').toLowerCase().includes('select');
+
+                                  if (isEditing) {
+                                    setAssignData({
+                                      assigned_user_id: staff[0]?.id || '',
+                                      days_allotted: 2,
+                                      custom_date: '',
+                                      use_custom_date: false,
+                                      priority: 'medium',
+                                      notes: '',
+                                      pendingItemIds: [item.id],
+                                      action: next.action,
+                                    });
+                                    setIsAssignModalOpen(true);
+                                  } else {
+                                    transitionMutation.mutate({ id: item.id, action: next.action });
+                                  }
                                 }}
-                                disabled={transitionMutation.isPending}
+                                disabled={transitionMutation.isPending || batchTransitionMutation.isPending}
                                 className="flex items-center gap-1 px-2.5 py-1 rounded text-xs font-semibold border hover:bg-[var(--accent)] transition-colors cursor-pointer disabled:opacity-50"
                                 style={{ borderColor: 'var(--border)', color: 'var(--primary)' }}
                               >
@@ -1998,6 +2101,259 @@ export default function ContentPage() {
                   className="btn-metallic px-5 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
                 >
                   {createMutation.isPending ? 'Registering...' : 'Add Deliverable'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL: ASSIGN EDITOR & PROJECT DAYS (SEND TO EDITING)        */}
+      {/* ============================================================ */}
+      {isAssignModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div
+            className="w-full max-w-lg rounded-xl border p-6 shadow-2xl space-y-5 my-8"
+            style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b pb-4" style={{ borderColor: 'var(--border)' }}>
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-10 h-10 rounded-lg flex items-center justify-center"
+                  style={{ backgroundColor: 'rgba(59, 130, 246, 0.15)', color: 'var(--primary)' }}
+                >
+                  <Scissors className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold" style={{ color: 'var(--foreground)' }}>
+                    Assign to Editor & Send
+                  </h2>
+                  <p className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                    Transition selected items to Editing and assign to a specialist
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAssignModalOpen(false)}
+                className="p-1 rounded-lg hover:bg-[var(--accent)] text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Selected Items Preview */}
+            <div
+              className="p-3.5 rounded-lg border space-y-2"
+              style={{ backgroundColor: 'var(--background)', borderColor: 'var(--border)' }}
+            >
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold" style={{ color: 'var(--foreground)' }}>
+                  Selected Assets ({assignData.pendingItemIds.length})
+                </span>
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded" style={{ backgroundColor: 'var(--accent)', color: 'var(--primary)' }}>
+                  {activeClient?.business_name || 'Client Deliverables'}
+                </span>
+              </div>
+
+              {/* Mini thumbs preview */}
+              <div className="flex items-center gap-2 overflow-x-auto py-1">
+                {assignData.pendingItemIds.slice(0, 8).map((id) => {
+                  const item = contentItems.find((ci) => ci.id === id);
+                  return (
+                    <div
+                      key={id}
+                      className="flex-shrink-0 w-12 h-12 rounded border overflow-hidden relative group"
+                      style={{ borderColor: 'var(--border)', backgroundColor: 'var(--card)' }}
+                      title={item?.display_name || id}
+                    >
+                      {item?.thumbnail_url || item?.image_url ? (
+                        <img
+                          src={item.thumbnail_url || item.image_url}
+                          alt={item?.display_name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-[10px] text-zinc-400">
+                          {item?.file_name?.slice(0, 3) || 'IMG'}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {assignData.pendingItemIds.length > 8 && (
+                  <div
+                    className="flex-shrink-0 w-12 h-12 rounded border flex items-center justify-center text-xs font-bold"
+                    style={{ borderColor: 'var(--border)', color: 'var(--muted-foreground)', backgroundColor: 'var(--card)' }}
+                  >
+                    +{assignData.pendingItemIds.length - 8}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <form onSubmit={handleConfirmAssignment} className="space-y-4">
+              {/* Assign Editor */}
+              <div>
+                <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--foreground)' }}>
+                  Assign Editor / Specialist <span className="text-red-500">*</span>
+                </label>
+                <select
+                  required
+                  value={assignData.assigned_user_id}
+                  onChange={(e) => setAssignData({ ...assignData, assigned_user_id: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border text-sm bg-transparent outline-none cursor-pointer"
+                  style={{ borderColor: 'var(--border)', color: 'var(--foreground)' }}
+                >
+                  <option value="" disabled style={{ backgroundColor: 'var(--surface)', color: 'var(--foreground)' }}>
+                    -- Select Editor / Staff Member --
+                  </option>
+                  {staff.map((u) => (
+                    <option key={u.id} value={u.id} style={{ backgroundColor: 'var(--surface)', color: 'var(--foreground)' }}>
+                      {u.full_name} {u.designation_name ? `(${u.designation_name})` : u.role_name ? `(${u.role_name})` : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] mt-1" style={{ color: 'var(--muted-foreground)' }}>
+                  This task will appear under their personal <strong>My Work</strong> queue.
+                </p>
+              </div>
+
+              {/* Project Days / Timeline */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-semibold" style={{ color: 'var(--foreground)' }}>
+                    Project Timeline / Days Allotted
+                  </label>
+                  <span className="text-[11px] font-medium" style={{ color: 'var(--primary)' }}>
+                    {(() => {
+                      if (assignData.use_custom_date && assignData.custom_date) {
+                        return `Due: ${new Date(assignData.custom_date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}`;
+                      }
+                      const d = new Date();
+                      d.setDate(d.getDate() + assignData.days_allotted);
+                      return `Due: ${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })} (${assignData.days_allotted} day${assignData.days_allotted !== 1 ? 's' : ''})`;
+                    })()}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-5 gap-2">
+                  {[1, 2, 3, 5].map((days) => (
+                    <button
+                      key={days}
+                      type="button"
+                      onClick={() => setAssignData({ ...assignData, days_allotted: days, use_custom_date: false })}
+                      className="py-1.5 px-2 rounded-lg text-xs font-medium border text-center transition-all cursor-pointer"
+                      style={{
+                        backgroundColor: !assignData.use_custom_date && assignData.days_allotted === days ? 'var(--primary)' : 'var(--background)',
+                        color: !assignData.use_custom_date && assignData.days_allotted === days ? '#fff' : 'var(--foreground)',
+                        borderColor: !assignData.use_custom_date && assignData.days_allotted === days ? 'var(--primary)' : 'var(--border)',
+                      }}
+                    >
+                      {days} {days === 1 ? 'Day' : 'Days'}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setAssignData({ ...assignData, use_custom_date: true })}
+                    className="py-1.5 px-2 rounded-lg text-xs font-medium border text-center transition-all cursor-pointer"
+                    style={{
+                      backgroundColor: assignData.use_custom_date ? 'var(--primary)' : 'var(--background)',
+                      color: assignData.use_custom_date ? '#fff' : 'var(--foreground)',
+                      borderColor: assignData.use_custom_date ? 'var(--primary)' : 'var(--border)',
+                    }}
+                  >
+                    Custom
+                  </button>
+                </div>
+
+                {assignData.use_custom_date && (
+                  <div className="mt-2">
+                    <input
+                      type="date"
+                      min={new Date().toISOString().split('T')[0]}
+                      value={assignData.custom_date}
+                      onChange={(e) => setAssignData({ ...assignData, custom_date: e.target.value })}
+                      className="w-full px-3 py-1.5 rounded-lg border text-xs bg-transparent outline-none"
+                      style={{ borderColor: 'var(--border)', color: 'var(--foreground)' }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Priority */}
+              <div>
+                <label className="text-xs font-semibold block mb-1.5" style={{ color: 'var(--foreground)' }}>
+                  Priority Level
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { id: 'low', label: 'Low', color: 'var(--muted-foreground)' },
+                    { id: 'medium', label: 'Medium', color: 'var(--info)' },
+                    { id: 'high', label: 'High', color: 'var(--warning)' },
+                    { id: 'urgent', label: 'Urgent', color: 'var(--danger)' },
+                  ].map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setAssignData({ ...assignData, priority: p.id })}
+                      className="py-1.5 px-2 rounded-lg text-xs font-medium border text-center transition-all cursor-pointer"
+                      style={{
+                        backgroundColor: assignData.priority === p.id ? 'var(--accent)' : 'transparent',
+                        borderColor: assignData.priority === p.id ? p.color : 'var(--border)',
+                        color: assignData.priority === p.id ? p.color : 'var(--muted-foreground)',
+                        fontWeight: assignData.priority === p.id ? 'bold' : 'normal',
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Instructions / Brief Notes */}
+              <div>
+                <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--foreground)' }}>
+                  Editing Instructions / Brief (optional)
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Color balance, remove background distractions, client prefers vibrant contrast..."
+                  value={assignData.notes}
+                  onChange={(e) => setAssignData({ ...assignData, notes: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border text-xs bg-transparent outline-none resize-none"
+                  style={{ borderColor: 'var(--border)', color: 'var(--foreground)' }}
+                />
+              </div>
+
+              {/* Modal Actions */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t" style={{ borderColor: 'var(--border)' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsAssignModalOpen(false)}
+                  className="px-4 py-2 rounded-lg border text-sm font-medium transition-colors cursor-pointer"
+                  style={{ borderColor: 'var(--border)', color: 'var(--muted-foreground)' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={batchTransitionMutation.isPending}
+                  className="btn-metallic flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 cursor-pointer shadow-md"
+                >
+                  {batchTransitionMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Assigning & Sending...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Assign & Send to Editing</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>
